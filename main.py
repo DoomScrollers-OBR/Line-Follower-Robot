@@ -8,40 +8,35 @@ except ImportError:
 
 WINDOW_NAME = "Seguidor de Linha"
 
-# Pinos utilizados na Raspberry Pi 4 Model B (mesma numeração BCM do Pi Zero)
-IN1 = 4
-IN2 = 17
-IN3 = 27
-IN4 = 22
-EN1 = 23
-EN2 = 24
-PWM_FREQUENCY = 100
-BASE_SPEED = 50
+# Pinos utilizados (BCM) conforme informado
+# GPIO18 -> IN1 (pino físico 12)
+# GPIO19 -> IN2 (pino físico 35)
+# GPIO12 -> IN3 (pino físico 32)
+# GPIO13 -> IN4 (pino físico 33)
+# ENA/ENB (EN1/EN2) não estão sendo usados
+IN1 = 18
+IN2 = 19
+IN3 = 12
+IN4 = 13
 
 
 def setup_motors():
     """Configura os pinos dos motores e inicia o PWM."""
     if GPIO is None:
         print("RPi.GPIO não encontrado. Modo simulado ativo.")
-        return None, None
+        return None
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
-
-    GPIO.setup(EN1, GPIO.OUT)
-    GPIO.setup(EN2, GPIO.OUT)
+    # Configura apenas as entradas de controle (IN1..IN4). Sem pinos ENA/ENB.
     GPIO.setup(IN1, GPIO.OUT)
     GPIO.setup(IN2, GPIO.OUT)
     GPIO.setup(IN3, GPIO.OUT)
     GPIO.setup(IN4, GPIO.OUT)
 
-    p1 = GPIO.PWM(EN1, PWM_FREQUENCY)
-    p2 = GPIO.PWM(EN2, PWM_FREQUENCY)
-    p1.start(BASE_SPEED)
-    p2.start(BASE_SPEED)
-
+    # Garante estado inicial desligado
     stop_motors()
-    return p1, p2
+    return None
 
 
 def stop_motors():
