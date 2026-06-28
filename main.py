@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 
 try:
-    import RPi.GPIO as GPIO
+    from gpiozero import DigitalOutputDevice
 except ImportError:
-    GPIO = None
+    DigitalOutputDevice = None
 
 WINDOW_NAME = "Seguidor de Linha"
 
@@ -13,46 +13,55 @@ WINDOW_NAME = "Seguidor de Linha"
 # GPIO19 -> IN2 (pino físico 35)
 # GPIO12 -> IN3 (pino físico 32)
 # GPIO13 -> IN4 (pino físico 33)
-# ENA/ENB (EN1/EN2) não estão sendo usados
-IN1 = 18
-IN2 = 19
-IN3 = 12
-IN4 = 13
+
+# Objetos dos motores
+motor_left = None
+motor_right = None
 
 
 def setup_motors():
-    """Configura os pinos dos motores e inicia o PWM."""
-    if GPIO is None:
-        print("RPi.GPIO não encontrado. Modo simulado ativo.")
-        return None
+    """Configura os pinos dos motores usando gpiozero."""
+    global motor_left, motor_right
+    
+    if DigitalOutputDevice is None:
+        print("gpiozero não encontrado. Modo simulado ativo.")
+        return
 
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
-    # Configura apenas as entradas de controle (IN1..IN4). Sem pinos ENA/ENB.
-    GPIO.setup(IN1, GPIO.OUT)
-    GPIO.setup(IN2, GPIO.OUT)
-    GPIO.setup(IN3, GPIO.OUT)
-    GPIO.setup(IN4, GPIO.OUT)
-
-    # Garante estado inicial desligado
-    stop_motors()
-    return None
+    try:
+        # Motor esquerdo (IN1 e IN2)
+        motor_left = {
+            'forward': DigitalOutputDevice(18),  # IN1
+            'backward': DigitalOutputDevice(19)  # IN2
+        }
+        
+        # Motor direito (IN3 e IN4)
+        motor_right = {
+            'forward': DigitalOutputDevice(12),  # IN3
+            'backward': DigitalOutputDevice(13)  # IN4
+        }
+        
+        # Garante estado inicial desligado
+        stop_motors()
+    except Exception as e:
+        print(f"Erro ao configurar motores: {e}")
+        motor_left = None
+        motor_right = None
 
 
 def stop_motors():
     """Para os motores e desliga as saídas."""
-    if GPIO is None:
+    if motor_left is None or motor_right is None:
         return
 
-    GPIO.output(IN1, GPIO.LOW)
-    GPIO.output(IN2, GPIO.LOW)
-    GPIO.output(IN3, GPIO.LOW)
-    GPIO.output(IN4, GPIO.LOW)
+    motor_left['forward'].off()
+    motor_left['backward'].off()
+    motor_right['forward'].off()
+    motor_right['backward'].off()
 
 
 def drive_robot(cx, frame_width):
     """Controla o movimento do robô com base na posição da linha na imagem."""
-    if GPIO is None:
+    if motor_left is None or motor_right is None:
         return
 
     center = frame_width // 2
@@ -65,22 +74,25 @@ def drive_robot(cx, frame_width):
 
     if cx > center + threshold:
         print("Virar para a esquerda")
-        GPIO.output(IN1, GPIO.HIGH)
-        GPIO.output(IN2, GPIO.LOW)
-        GPIO.output(IN3, GPIO.LOW)
-        GPIO.output(IN4, GPIO.HIGH)
+        # Motor esquerdo reverso, motor direito avançado
+        motor_left['forward'].on()
+        motor_left['backward'].off()
+        motor_right['forward'].off()
+        motor_right['backward'].on()
     elif cx < center - threshold:
         print("Virar para a direita")
-        GPIO.output(IN1, GPIO.LOW)
-        GPIO.output(IN2, GPIO.HIGH)
-        GPIO.output(IN3, GPIO.HIGH)
-        GPIO.output(IN4, GPIO.LOW)
+        # Motor esquerdo avançado, motor direito reverso
+        motor_left['forward'].off()
+        motor_left['backward'].on()
+        motor_right['forward'].on()
+        motor_right['backward'].off()
     else:
         print("Seguindo a linha")
-        GPIO.output(IN1, GPIO.HIGH)
-        GPIO.output(IN2, GPIO.LOW)
-        GPIO.output(IN3, GPIO.HIGH)
-        GPIO.output(IN4, GPIO.LOW)
+        # Ambos os motores avançados
+        motor_left['forward'].on()
+        motor_left['backward'].off()
+        motor_right['forward'].on()
+        motor_right['backward'].off()
 
 
 def process_frame(frame):
@@ -151,8 +163,7 @@ def main():
                 break
     finally:
         stop_motors()
-        if GPIO is not None:
-            GPIO.cleanup()
+        # gpiozero limpa automaticamente os recursos
         cap.release()
         cv2.destroyAllWindows()
 
