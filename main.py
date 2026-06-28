@@ -1,112 +1,167 @@
+import cv2
 import numpy as np
-import cv2 as cv
-import RPi.GPIO as GPIO
-from time import time
 
-Window_name = "Seguidor de Linha"
+try:
+    import RPi.GPIO as GPIO
+except ImportError:
+    GPIO = None
 
-def image_process(frame):
+WINDOW_NAME = "Seguidor de Linha"
 
-    height, width = frame.shape[:2]     # Obtem a altura e largura da imagem
-    roi = frame[height // 2:height, :]  # Utiliza a região de interesse, que é a metade inferior da imagem
+# Pinos utilizados na Raspberry Pi 4 Model B (mesma numeração BCM do Pi Zero)
+IN1 = 4
+IN2 = 17
+IN3 = 27
+IN4 = 22
+EN1 = 23
+EN2 = 24
+PWM_FREQUENCY = 100
+BASE_SPEED = 50
 
-    gray = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)  # Converte para escala de cinza
-    _, binary = cv.threshold(
-            gray,
-            100,
-            255,
-            cv.THRESH_BINARY_INV
-            )                           # Binariza a imagem, deixando em preto e branco de forma invertida (Branco vira preto e preto vira branco)
 
-    contours, _ = cv.findContours(
-            binary,
-            cv.RETR_EXTERNAL,
-            cv.CHAIN_APPROX_SIMPLE
-                )                           # Procura os contornos
+def setup_motors():
+    """Configura os pinos dos motores e inicia o PWM."""
+    if GPIO is None:
+        print("RPi.GPIO não encontrado. Modo simulado ativo.")
+        return None, None
 
-                                        
-    cx = None                           # Definem o centro da imagem no eixo X e Y
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
+
+    GPIO.setup(EN1, GPIO.OUT)
+    GPIO.setup(EN2, GPIO.OUT)
+    GPIO.setup(IN1, GPIO.OUT)
+    GPIO.setup(IN2, GPIO.OUT)
+    GPIO.setup(IN3, GPIO.OUT)
+    GPIO.setup(IN4, GPIO.OUT)
+
+    p1 = GPIO.PWM(EN1, PWM_FREQUENCY)
+    p2 = GPIO.PWM(EN2, PWM_FREQUENCY)
+    p1.start(BASE_SPEED)
+    p2.start(BASE_SPEED)
+
+    stop_motors()
+    return p1, p2
+
+
+def stop_motors():
+    """Para os motores e desliga as saídas."""
+    if GPIO is None:
+        return
+
+    GPIO.output(IN1, GPIO.LOW)
+    GPIO.output(IN2, GPIO.LOW)
+    GPIO.output(IN3, GPIO.LOW)
+    GPIO.output(IN4, GPIO.LOW)
+
+
+def drive_robot(cx, frame_width):
+    """Controla o movimento do robô com base na posição da linha na imagem."""
+    if GPIO is None:
+        return
+
+    center = frame_width // 2
+    threshold = 20
+
+    if cx is None:
+        print("Não vi a linha")
+        stop_motors()
+        return
+
+    if cx > center + threshold:
+        print("Virar para a esquerda")
+        GPIO.output(IN1, GPIO.HIGH)
+        GPIO.output(IN2, GPIO.LOW)
+        GPIO.output(IN3, GPIO.LOW)
+        GPIO.output(IN4, GPIO.HIGH)
+    elif cx < center - threshold:
+        print("Virar para a direita")
+        GPIO.output(IN1, GPIO.LOW)
+        GPIO.output(IN2, GPIO.HIGH)
+        GPIO.output(IN3, GPIO.HIGH)
+        GPIO.output(IN4, GPIO.LOW)
+    else:
+        print("Seguindo a linha")
+        GPIO.output(IN1, GPIO.HIGH)
+        GPIO.output(IN2, GPIO.LOW)
+        GPIO.output(IN3, GPIO.HIGH)
+        GPIO.output(IN4, GPIO.LOW)
+
+
+def process_frame(frame):
+    """Processa o frame, aplica a região de interesse e detecta a linha."""
+    height, width = frame.shape[:2]
+
+    # Região de interesse: metade inferior da imagem
+    roi = frame[height // 2:height, :]
+
+    # Converte para escala de cinza e binariza para destacar a linha
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY_INV)
+
+    # Procura os contornos encontrados na máscara
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    cx = None
     cy = None
 
-    if contours:                        # Se encontrou algum contorno 
-        
-        bigger = max(contours, key=cv.contourArea)   # Pega o maior contorno encontrado
-         
-        M = cv.moments(bigger)          # Calcula os momentos
+    if contours:
+        bigger = max(contours, key=cv2.contourArea)
+        M = cv2.moments(bigger)
 
-        if M["m00"] != 0:               # Se o numero de pixels for diferente de zero
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
 
-            cx = int(M["m10"] / M["m00"])           # Média aritmética das posições X dos pixels em razão do número de pixels, resultando no centro do eixo X
-            cy = int(M["m01"] / M["m00"] )          # O mesmo que a variavel passada, mas em relação ao eixo y. Os dois juntos resultam no centro da linha
+            # Desenha o contorno e o centro da linha na região de interesse
+            cv2.drawContours(roi, [bigger], -1, (0, 255, 0), 2)
+            cv2.circle(roi, (cx, cy), 5, (0, 0, 255), -1)
 
-            cv.drawContours(
-                    roi,
-                    [bigger],
-                    -1,
-                    (0,255,0),
-                    2
-                    )                               # Desenha os contornos
-            cv.circle(
-                    roi,
-                    (cx, cy),
-                    5,
-                    (0, 0, 255),
-                    -1
-                    )                               # Desenha o centro da linha
-            
-            center = width // 2                     # Centro da Imagem
+            # Desenha a linha central da imagem para referência
+            center_x = width // 2
+            cv2.line(frame, (center_x, 0), (center_x, height), (255, 0, 0), 2)
 
-            cv.line(
-                 frame,
-                 (center, 0),
-                 (center, height),
-                 (255, 0, 0),
-                 2
-            )
-
-            if cx is not None:
-                 error = cx - center
-
-            return frame, roi, binary, cx, cy, width, height, center, error
+    return frame, roi, binary, cx, cy
 
 
-def display():
-    cam = cv.VideoCapture(0)
+def main():
+    """Função principal do programa."""
+    cap = cv2.VideoCapture(0)
 
-    if not cam.IsOpened():
-        print("Não foi possivel abrir a câmera")
+    # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+
+    if not cap.isOpened():
+        print("Não foi possível abrir a câmera.")
         return
-    cv.namedWindow(Window_name, cv.WINDOW_NORMAL)
 
-    while True:
+    setup_motors()
+    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
 
-        ret, frame = cam.read()
-
-        if not ret:
-             break
-
-        frame, roi, binary, cx, cy, width, height, center, error = image_process(frame)
-
-        cv.imshow(Window_name, frame)
-
-        if cv.waitkey(1) & 0xFF == 27:
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
                 break
 
-        return cam
+            frame, roi, mask, cx, cy = process_frame(frame)
+            drive_robot(cx, frame.shape[1])
+
+            cv2.imshow(WINDOW_NAME, frame)
+            cv2.imshow("Máscara", mask)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                break
+    finally:
+        stop_motors()
+        if GPIO is not None:
+            GPIO.cleanup()
+        cap.release()
+        cv2.destroyAllWindows()
 
 
-def controlador():
-     
-     frame, roi, binary, cx, cy, width, height, center, error = image_process(frame)
-
-     if error >= center-20:
-        print("Turn Left")
-     elif error <= center-20:
-        print("Turn Right")
-     elif error == center:
-        print("On Track")
-
-cam = display()
-cam.release()
-cv.destroyAllWindows
+if __name__ == "__main__":
+    main()
 
