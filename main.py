@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import time
+import os
 
 try:
     from gpiozero import DigitalOutputDevice
@@ -133,14 +135,49 @@ def process_frame(frame):
 
 def main():
     """Função principal do programa."""
-    cap = cv2.VideoCapture(0)
+    # Tenta abrir a câmera com várias estratégias (fallbacks)
+    attempts = [
+        ("default index", lambda: cv2.VideoCapture(0)),
+        ("v4l2 index", lambda: cv2.VideoCapture(0, cv2.CAP_V4L2)),
+        ("v4l2 device", lambda: cv2.VideoCapture('/dev/video0', cv2.CAP_V4L2)),
+        ("gstreamer index", lambda: cv2.VideoCapture(0, cv2.CAP_GSTREAMER)),
+    ]
 
-    # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap = None
+    for name, opener in attempts:
+        try:
+            print(f"Tentando abrir câmera ({name})...")
+            cap = opener()
+            # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
+            try:
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+            except Exception:
+                pass
 
-    if not cap.isOpened():
-        print("Não foi possível abrir a câmera.")
+            # Pequena espera para backend inicializar
+            time.sleep(0.2)
+            if cap is not None and cap.isOpened():
+                print(f"Câmera aberta com sucesso usando: {name}")
+                break
+            else:
+                print(f"Falha ao abrir com: {name}")
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                cap = None
+        except Exception as e:
+            print(f"Erro tentando abrir câmera ({name}): {e}")
+
+    if cap is None or not cap.isOpened():
+        print("Não foi possível abrir a câmera. Verifique: \n- Se a câmera está conectada;\n- Se o usuário pertence ao grupo 'video';\n- Se outro processo (libcamera, vlc, etc.) não está usando /dev/video0;")
+        # Lista rápida de dispositivos encontrados para ajudar diagnóstico
+        try:
+            devs = sorted([d for d in os.listdir('/dev') if d.startswith('video')])
+            print("/dev contém:", devs)
+        except Exception:
+            pass
         return
 
     setup_motors()                      # Configura os motores
@@ -155,12 +192,12 @@ def main():
             frame, roi, mask, cx, cy = process_frame(frame)
             drive_robot(cx, frame.shape[1])
 
-            cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-            cv2.imshow("Máscara", mask)
+            # cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
+            # cv2.imshow("Máscara", mask)
 
-            key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-            if key == ord("q"):
-                break
+            # key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
+            # if key == ord("q"):
+            #     break
     finally:
         stop_motors()
         # gpiozero limpa automaticamente os recursos
