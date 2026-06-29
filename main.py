@@ -4,9 +4,9 @@ import time
 import os
 
 try:
-    from gpiozero import DigitalOutputDevice
+    from gpiozero import PWMOutputDevice
 except ImportError:
-    DigitalOutputDevice = None
+    PWMOutputDevice = None
 
 WINDOW_NAME = "Seguidor de Linha"
 
@@ -20,29 +20,30 @@ WINDOW_NAME = "Seguidor de Linha"
 motor_left = None
 motor_right = None
 
-velocity = 150
+velocity = 0.35
+
 
 def setup_motors():
-    """Configura os pinos dos motores usando gpiozero."""
+    """Configura os pinos dos motores usando gpiozero com PWM."""
     global motor_left, motor_right
-    
-    if DigitalOutputDevice is None:
+
+    if PWMOutputDevice is None:
         print("gpiozero não encontrado. Modo simulado ativo.")
         return
 
     try:
         # Motor esquerdo (IN1 e IN2)
         motor_left = {
-            'forward': DigitalOutputDevice(18),  # IN1
-            'backward': DigitalOutputDevice(19)  # IN2
+            'forward': PWMOutputDevice(18, initial_value=0),  # IN1
+            'backward': PWMOutputDevice(19, initial_value=0)  # IN2
         }
-        
+
         # Motor direito (IN3 e IN4)
         motor_right = {
-            'forward': DigitalOutputDevice(12),  # IN3
-            'backward': DigitalOutputDevice(13)  # IN4
+            'forward': PWMOutputDevice(12, initial_value=0),  # IN3
+            'backward': PWMOutputDevice(13, initial_value=0)  # IN4
         }
-        
+
         # Garante estado inicial desligado
         stop_motors()
     except Exception as e:
@@ -52,14 +53,14 @@ def setup_motors():
 
 
 def stop_motors():
-    """Para os motores e desliga as saídas."""
+    """Para os motores e desliga as saídas PWM."""
     if motor_left is None or motor_right is None:
         return
 
-    motor_left['forward'].off()
-    motor_left['backward'].off()
-    motor_right['forward'].off()
-    motor_right['backward'].off()
+    motor_left['forward'].value = 0
+    motor_left['backward'].value = 0
+    motor_right['forward'].value = 0
+    motor_right['backward'].value = 0
 
 
 def drive_robot(cx, frame_width):
@@ -78,24 +79,24 @@ def drive_robot(cx, frame_width):
     if cx > center + threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
         print("Virar para a esquerda")
         # Motor esquerdo avançado, motor direito reverso
-        motor_left['forward'].on()
-        motor_left['backward'].off()
-        motor_right['forward'].off()
-        motor_right['backward'].on()
+        motor_left['forward'].value = velocity
+        motor_left['backward'].value = 0
+        motor_right['forward'].value = 0
+        motor_right['backward'].value = velocity
     elif cx < center - threshold:   # Se o valor da linha no eixo x for menor que o centro da imagem - tolerância...
         print("Virar para a direita")
         # Motor esquerdo reverso, motor direito avançado
-        motor_left['forward'].off()
-        motor_left['backward'].on()
-        motor_right['forward'].on()
-        motor_right['backward'].off()
+        motor_left['forward'].value = 0
+        motor_left['backward'].value = velocity
+        motor_right['forward'].value = velocity
+        motor_right['backward'].value = 0
     else:                           # Caso esteja dentro da tolerância
         print("Seguindo a linha")
-        # Ambos os motores avançados
-        motor_left['forward'].on()
-        motor_left['backward'].off()
-        motor_right['forward'].on()
-        motor_right['backward'].off()
+        # Ambos os motores avançados com PWM em velocidade lenta
+        motor_left['forward'].value = velocity
+        motor_left['backward'].value = 0
+        motor_right['forward'].value = velocity
+        motor_right['backward'].value = 0
 
 
 def process_frame(frame):
