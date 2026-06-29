@@ -20,7 +20,7 @@ WINDOW_NAME = "Seguidor de Linha"
 motor_left = None
 motor_right = None
 
-velocity = 0.35
+velocity = 0.25
 
 
 def setup_motors():
@@ -73,7 +73,7 @@ def drive_robot(cx, frame_width):
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
-        stop_motors()
+        
         return
 
     if cx > center + threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
