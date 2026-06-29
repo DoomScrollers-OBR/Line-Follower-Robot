@@ -20,6 +20,7 @@ WINDOW_NAME = "Seguidor de Linha"
 motor_left = None
 motor_right = None
 
+velocity = 150
 
 def setup_motors():
     """Configura os pinos dos motores usando gpiozero."""
@@ -181,7 +182,7 @@ def main():
         return
 
     setup_motors()                      # Configura os motores
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    #cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
 
     try:
         while True:
@@ -202,7 +203,7 @@ def main():
         stop_motors()
         # gpiozero limpa automaticamente os recursos
         cap.release()
-        cv2.destroyAllWindows()
+        #cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":      # Execute o programa se tudo esta correto
