@@ -73,8 +73,10 @@ def drive_robot(cx, frame_width):
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
-        
-        return
+        motor_left['forward'].value = 0
+        motor_left['backward'].value = velocity
+        motor_right['forward'].value = 0
+        motor_right['backward'].value = velocity
 
     if cx > center + threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
         print("Virar para a esquerda")
