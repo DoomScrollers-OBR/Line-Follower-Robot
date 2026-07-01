@@ -74,7 +74,10 @@ def drive_robot(cx, frame_width):
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
-        stop_motors()
+        motor_left["forward"].value = velocity      # Gira no proprio eixo para tentar encontrar a linha
+        motor_left["backward"].value = 0
+        motor_right["forward"].value = 0
+        motor_right["backward"].value = velocity
         return
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
@@ -90,6 +93,9 @@ def drive_robot(cx, frame_width):
     left_speed = max(0, min(1, left_speed))     # Garante que a velocidade do motor esquerdo esteja entre 0 e 1. Evitando valores PWM negativos ou acima de 1
     right_speed = max(0, min(1, right_speed))
 
+    if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
+        correction = 0
+    
     motor_left["forward"].value = left_speed    # Isso é lindo cara, a matemática faz tudo pela gente, sem precisar de condicionais
     motor_left["backward"].value = 0
 
