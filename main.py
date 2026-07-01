@@ -71,34 +71,52 @@ def drive_robot(cx, frame_width):
     center = frame_width // 2       # Calcula o centro da imagem
     threshold = 20                  # Margem de erro de 20
 
+
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
-        motor_left['forward'].value = 0
-        motor_left['backward'].value = velocity
-        motor_right['forward'].value = 0
-        motor_right['backward'].value = velocity
+        stop_motors()
+        return
 
-    if cx > center + threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
-        print("Virar para a esquerda")
-        # Motor esquerdo avançado, motor direito reverso
-        motor_left['forward'].value = velocity
-        motor_left['backward'].value = 0
-        motor_right['forward'].value = 0
-        motor_right['backward'].value = velocity
-    elif cx < center - threshold:   # Se o valor da linha no eixo x for menor que o centro da imagem - tolerância...
-        print("Virar para a direita")
-        # Motor esquerdo reverso, motor direito avançado
-        motor_left['forward'].value = 0
-        motor_left['backward'].value = velocity
-        motor_right['forward'].value = velocity
-        motor_right['backward'].value = 0
-    else:                           # Caso esteja dentro da tolerância
-        print("Seguindo a linha")
-        # Ambos os motores avançados com PWM em velocidade lenta
-        motor_left['forward'].value = velocity
-        motor_left['backward'].value = 0
-        motor_right['forward'].value = velocity
-        motor_right['backward'].value = 0
+    error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
+
+    kp = 0.003                      # Constante proporcional
+    proportional = kp * error       # Variavel da correção proporcional em relação ao erro
+
+    correction = proportional       # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
+
+    left_speed = velocity - correction      # Velocidade do motor esquerdo
+    right_speed = velocity + correction     # Velocidade do motor direito
+
+    left_speed = max(0, min(1, left_speed))     # Garante que a velocidade do motor esquerdo esteja entre 0 e 1. Evitando valores PWM negativos ou acima de 1
+    right_speed = max(0, min(1, right_speed))
+
+    motor_left["forward"].value = left_speed    # Isso é lindo cara, a matemática faz tudo pela gente, sem precisar de condicionais
+    motor_left["backward"].value = 0
+
+    motor_right["forward"].value = right_speed  
+    motor_right["backward"].value = 0
+
+    # if error > threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
+    #     print("Virar para a esquerda")
+    #     # Motor esquerdo avançado, motor direito reverso
+    #     motor_left['forward'].value = left_speed
+    #     motor_left['backward'].value = 0
+    #     motor_right['forward'].value = 0
+    #     motor_right['backward'].value = right_speed
+    # elif error < -threshold:   # Se o valor da linha no eixo x for menor que o centro da imagem - tolerância...
+    #     print("Virar para a direita")
+    #     # Motor esquerdo reverso, motor direito avançado
+    #     motor_left['forward'].value = 0
+    #     motor_left['backward'].value = left_speed
+    #     motor_right['forward'].value = right_speed
+    #     motor_right['backward'].value = 0
+    # else:                           # Caso esteja dentro da tolerância
+    #     print("Seguindo a linha")
+    #     # Ambos os motores avançados com PWM em velocidade lenta
+    #     motor_left['forward'].value = left_speed
+    #     motor_left['backward'].value = 0
+    #     motor_right['forward'].value = right_speed
+    #     motor_right['backward'].value = 0
 
 
 def process_frame(frame):
