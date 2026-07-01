@@ -82,7 +82,7 @@ def drive_robot(cx, frame_width):
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
 
-    kp = 0.003                      # Constante proporcional
+    kp = 0.05                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
 
     correction = proportional       # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
