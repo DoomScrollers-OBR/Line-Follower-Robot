@@ -87,15 +87,15 @@ def drive_robot(cx, frame_width):
 
     correction = proportional       # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
 
+    if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
+        correction = 0
+
     left_speed = velocity - correction      # Velocidade do motor esquerdo
     right_speed = velocity + correction     # Velocidade do motor direito
 
     left_speed = max(0, min(1, left_speed))     # Garante que a velocidade do motor esquerdo esteja entre 0 e 1. Evitando valores PWM negativos ou acima de 1
     right_speed = max(0, min(1, right_speed))
 
-    if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
-        correction = 0
-    
     motor_left["forward"].value = left_speed    # Isso é lindo cara, a matemática faz tudo pela gente, sem precisar de condicionais
     motor_left["backward"].value = 0
 
