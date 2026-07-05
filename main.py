@@ -72,6 +72,7 @@ def drive_robot(cx, frame_width):
     threshold = 20                  # Margem de erro de 20
 
     global last_error  # Declara que vamos usar a variável global last_error
+    global last_time   # Declara que vamos usar a variável global last_time
 
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
