@@ -22,6 +22,8 @@ motor_right = None
 
 velocity = 0.25
 
+last_error = 0.0  # Variável global para armazenar o último erro
+last_time = 0  # Variável global para armazenar o último tempo
 
 def setup_motors():
     """Configura os pinos dos motores usando gpiozero com PWM."""
