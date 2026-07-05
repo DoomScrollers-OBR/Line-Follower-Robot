@@ -20,7 +20,7 @@ WINDOW_NAME = "Seguidor de Linha"
 motor_left = None
 motor_right = None
 
-velocity = 0.25
+velocity = 0.20
 
 last_error = 0.0  # Variável global para armazenar o último erro
 last_time = 0  # Variável global para armazenar o último tempo
@@ -85,7 +85,7 @@ def drive_robot(cx, frame_width):
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
 
-    kp = 0.003                     # Constante proporcional
+    kp = 0.005                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
     
     Kd = 0
