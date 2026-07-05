@@ -71,21 +71,28 @@ def drive_robot(cx, frame_width):
     center = frame_width // 2       # Calcula o centro da imagem
     threshold = 20                  # Margem de erro de 20
 
+    global last_error  # Declara que vamos usar a variável global last_error
+
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
-        motor_left["forward"].value = velocity      # Gira no proprio eixo para tentar encontrar a linha
-        motor_left["backward"].value = 0
-        motor_right["forward"].value = 0
-        motor_right["backward"].value = velocity
+        motor_left["forward"].value = velocity      
+        motor_right["forward"].value = velocity
         return
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
 
-    kp = 0.05                     # Constante proporcional
+    kp = 0.003                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
+    
+    Kd = 0
 
-    correction = proportional       # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
+    now = time.time()                 # Pega o tempo atual
+    dt = now - last_time
+    derivative = Kd * (error - last_error) / dt if dt > 0 else 0  # Variavel da correção derivativa em relação ao erro
+    last_time = now
+
+    correction = proportional + derivative     # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
 
     if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
         correction = 0
@@ -101,6 +108,8 @@ def drive_robot(cx, frame_width):
 
     motor_right["forward"].value = right_speed  
     motor_right["backward"].value = 0
+
+    last_error = error  # Atualiza o último erro para a próxima iteração
 
     # if error > threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
     #     print("Virar para a esquerda")
