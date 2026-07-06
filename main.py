@@ -10,23 +10,17 @@ except ImportError:
 
 WINDOW_NAME = "Seguidor de Linha"
 
-# Pinos utilizados (BCM) conforme informado
-# GPIO18 -> IN1 (pino físico 12)
-# GPIO19 -> IN2 (pino físico 35)
-# GPIO12 -> IN3 (pino físico 32)
-# GPIO13 -> IN4 (pino físico 33)
-
 # Objetos dos motores
 motor_left = None
 motor_right = None
 
-velocity = 0.20
+velocity = 0.20     # Variável global para armazenar a velocidade do robô (0 a 1)
 
-last_error = 0.0  # Variável global para armazenar o último erro
-last_time = 0  # Variável global para armazenar o último tempo
+last_error = 0.0    # Variável global para armazenar o último erro
+last_time = 0       # Variável global para armazenar o último tempo
 
 def setup_motors():
-    """Configura os pinos dos motores usando gpiozero com PWM."""
+    # Configura os pinos dos motores usando gpiozero com PWM.
     global motor_left, motor_right
 
     if PWMOutputDevice is None:
@@ -34,6 +28,12 @@ def setup_motors():
         return
 
     try:
+
+        # GPIO18 -> IN1 (pino físico 12)
+        # GPIO19 -> IN2 (pino físico 35)
+        # GPIO12 -> IN3 (pino físico 32)
+        # GPIO13 -> IN4 (pino físico 33)
+
         # Motor esquerdo (IN1 e IN2)
         motor_left = {
             'forward': PWMOutputDevice(18, initial_value=0),  # IN1
@@ -55,7 +55,7 @@ def setup_motors():
 
 
 def stop_motors():
-    """Para os motores e desliga as saídas PWM."""
+    # Para os motores e desliga as saídas PWM.
     if motor_left is None or motor_right is None:
         return
 
@@ -66,7 +66,7 @@ def stop_motors():
 
 
 def drive_robot(cx, frame_width):
-    """Controla o movimento do robô com base na posição da linha na imagem."""
+    # Controla o movimento do robô com base na posição da linha na imagem.
     if motor_left is None or motor_right is None:
         return
 
@@ -85,7 +85,7 @@ def drive_robot(cx, frame_width):
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
 
-    kp = 0.005                     # Constante proporcional
+    kp = 0.001                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
     
     Kd = 0
