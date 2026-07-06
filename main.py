@@ -14,7 +14,7 @@ WINDOW_NAME = "Seguidor de Linha"
 motor_left = None
 motor_right = None
 
-velocity = 0.20     # Variável global para armazenar a velocidade do robô (0 a 1)
+velocity = 0.17     # Variável global para armazenar a velocidade do robô (0 a 1)
 
 last_error = 0.0    # Variável global para armazenar o último erro
 last_time = 0       # Variável global para armazenar o último tempo
@@ -36,13 +36,13 @@ def setup_motors():
 
         # Motor esquerdo (IN1 e IN2)
         motor_left = {
-            'forward': PWMOutputDevice(18, initial_value=0),  # IN1
+            'forward': PWMOutputDevice(18, initial_value=0, frequency=50),  # IN1
             'backward': PWMOutputDevice(19, initial_value=0)  # IN2
         }
 
         # Motor direito (IN3 e IN4)
         motor_right = {
-            'forward': PWMOutputDevice(12, initial_value=0),  # IN3
+            'forward': PWMOutputDevice(12, initial_value=0, frequency=50),  # IN3
             'backward': PWMOutputDevice(13, initial_value=0)  # IN4
         }
 
@@ -71,7 +71,7 @@ def drive_robot(cx, frame_width):
         return
 
     center = frame_width // 2       # Calcula o centro da imagem
-    threshold = 5                  # Margem de erro de 21
+    threshold = 4                  # Margem de erro de 21
 
     global last_error  # Declara que vamos usar a variável global last_error
     global last_time   # Declara que vamos usar a variável global last_time
