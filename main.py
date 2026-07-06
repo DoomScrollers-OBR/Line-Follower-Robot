@@ -71,7 +71,7 @@ def drive_robot(cx, frame_width):
         return
 
     center = frame_width // 2       # Calcula o centro da imagem
-    threshold = 20                  # Margem de erro de 20
+    threshold = 5                  # Margem de erro de 21
 
     global last_error  # Declara que vamos usar a variável global last_error
     global last_time   # Declara que vamos usar a variável global last_time
@@ -85,10 +85,10 @@ def drive_robot(cx, frame_width):
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
 
-    kp = 0.002                     # Constante proporcional
+    kp = 0.0009                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
     
-    Kd = 0
+    Kd = 0.0005
 
     now = time.time()                 # Pega o tempo atual
     dt = now - last_time
