@@ -9,12 +9,13 @@ except ImportError:
     PWMOutputDevice = None
 
 WINDOW_NAME = "Seguidor de Linha"
+THRESHOLD_NAME = "Threshold"
 
 # Objetos dos motores
 motor_left = None
 motor_right = None
 
-velocity = 0.12     # Variável global para armazenar a velocidade do robô (0 a 1)
+velocity = 0.22     # Variável global para armazenar a velocidade do robô (0 a 1)
 
 last_error = 0.0    # Variável global para armazenar o último erro
 last_time = 0       # Variável global para armazenar o último tempo
@@ -33,7 +34,6 @@ def setup_motors():
         # GPIO19 -> IN2 (pino físico 35)
         # GPIO12 -> IN3 (pino físico 32)
         # GPIO13 -> IN4 (pino físico 33)
-
         # Motor esquerdo (IN1 e IN2)
         motor_left = {
             'forward': PWMOutputDevice(18, initial_value=0, frequency=30),  # IN1
@@ -71,7 +71,7 @@ def drive_robot(cx, frame_width):
         return
 
     center = frame_width // 2       # Calcula o centro da imagem
-    threshold = 8                  # Margem de erro de 21
+    threshold = 20                  # Margem de erro de 21
 
     global last_error  # Declara que vamos usar a variável global last_error
     global last_time   # Declara que vamos usar a variável global last_time
@@ -221,7 +221,6 @@ def main():
         return
 
     setup_motors()                      # Configura os motores
-    #cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
 
     try:
         while True:
@@ -232,17 +231,17 @@ def main():
             frame, roi, mask, cx, cy = process_frame(frame)
             drive_robot(cx, frame.shape[1])
 
-            # cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-            # cv2.imshow("Máscara", mask)
+            cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
+            cv2.imshow("Máscara", mask)
 
-            # key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-            # if key == ord("q"):
-            #     break
+            key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
+            if key == ord("q"):
+                break
     finally:
         stop_motors()
         # gpiozero limpa automaticamente os recursos
         cap.release()
-        #cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":      # Execute o programa se tudo esta correto

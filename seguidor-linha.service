@@ -1,0 +1,14 @@
+[Unit]
+Description=Controlador do Seguidor de Linha (start automatico + botao)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=serafim
+WorkingDirectory=/home/serafim/Line-Follower-Robot
+ExecStart=/home/serafim/Line-Follower-Robot/iniciar_seguidor.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
