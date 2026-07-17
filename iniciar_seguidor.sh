@@ -1,7 +1,6 @@
 #!/bin/bash
-# iniciar_seguidor.sh
 
-DIR_PROJETO="/home/serafim/Line_Follower_Robot"   # pasta do projeto
+DIR_PROJETO="/home/serafim/Documentos/Line-Follower-Robot"   # pasta do projeto
 USAR_VENV=false                          # true se é  ambiente virtual
 VENV_PATH="$DIR_PROJETO/venv"           # ambiente virtual
 

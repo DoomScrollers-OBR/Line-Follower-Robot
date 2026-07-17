@@ -2,14 +2,14 @@
 """
 controller.py
 
-Controlar via botão físico:
+Con
 
-  - Quando a rasp liga o programa inicia sozinho
-  - 1o clique no botão (com o seguidor rodando)  
-	-> para o seguidor.
+  - Ao ligar o Raspberry Pi, o seguidor de linha inicia sozinho.
+  - 1o clique no botão (seguidor rodando)
+	 para o seguidor.
   - 2o clique no botão (seguidor parado):
-        se tiver internet -> roda "git pull" para atualizar o código
-        se não tiver  internet -> inicia o seguidor de linha de novo
+        COM internet -> roda "git pull" para atualizar o código
+        SEM internet -> inicia o seguidor de linha de novo
 """
 
 import os
@@ -19,7 +19,7 @@ import subprocess
 from gpiozero import Button
 
 # ----------------- CONFIGURAÇÃO (ajuste aqui) -----------------
-DIR_PROJETO = "/home/serafim/Documentos/Line-Follower-Robot"   # pasta do repositório
+DIR_PROJETO = "/home/serafim/Line-Follower-Robot"   # pasta do repositório
 SCRIPT_SEGUIDOR = "main.py"           # arquivo do seguidor de linha
 PINO_BOTAO = 17                           # GPIO
 # ----------------------------------------------------------------
@@ -28,7 +28,7 @@ processo = None  # processo do seguidor de linha em execução
 
 
 def tem_internet(host="8.8.8.8", porta=53, timeout=3):
-    """Testa conexão com a internet"""
+    """Testa conexão com a internet (Google DNS), sem depender de ping."""
     try:
         socket.setdefaulttimeout(timeout)
         socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, porta))
@@ -98,7 +98,9 @@ def ao_clicar():
 
     if tem_internet():
         atualizar_codigo()
-        iniciar_seguidor()
+        # Para reiniciar o seguidor automaticamente depois do pull,
+        # descomente a linha abaixo:
+        # iniciar_seguidor()
     else:
         print("[controller] Sem internet.")
         iniciar_seguidor()

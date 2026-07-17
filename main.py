@@ -231,17 +231,17 @@ def main():
             frame, roi, mask, cx, cy = process_frame(frame)
             drive_robot(cx, frame.shape[1])
 
-            cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-            cv2.imshow("Máscara", mask)
+           # cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
+           # cv2.imshow("Máscara", mask)
 
-            key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-            if key == ord("q"):
-                break
+           # key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
+           # if key == ord("q"):
+           #     break
     finally:
         stop_motors()
         # gpiozero limpa automaticamente os recursos
         cap.release()
-        cv2.destroyAllWindows()
+        # cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":      # Execute o programa se tudo esta correto
