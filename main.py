@@ -15,7 +15,7 @@ THRESHOLD_NAME = "Threshold"
 motor_left = None
 motor_right = None
 
-velocity = 0.22     # Variável global para armazenar a velocidade do robô (0 a 1)
+velocity = 0.20     # Variável global para armazenar a velocidade do robô (0 a 1)
 
 last_error = 0.0    # Variável global para armazenar o último erro
 last_time = 0       # Variável global para armazenar o último tempo
@@ -71,7 +71,7 @@ def drive_robot(cx, frame_width):
         return
 
     center = frame_width // 2       # Calcula o centro da imagem
-    threshold = 20                  # Margem de erro de 21
+    threshold = 5                  # Margem de erro de 21
 
     global last_error  # Declara que vamos usar a variável global last_error
     global last_time   # Declara que vamos usar a variável global last_time
@@ -84,6 +84,8 @@ def drive_robot(cx, frame_width):
         return
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
+    if abs(error) >= 40:
+        error = error * 1.5
 
     kp = 0.0007                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
@@ -94,14 +96,16 @@ def drive_robot(cx, frame_width):
     dt = now - last_time
     derivative = Kd * (error - last_error) / dt if dt > 0 else 0  # Variavel da correção derivativa em relação ao erro
     last_time = now
-
     correction = proportional + derivative     # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
+
+    max_correction = 0.30
+    correction = max(-max_correction, min(max_correction, correction))
 
     if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
         correction = 0
 
-    left_speed = velocity - correction      # Velocidade do motor esquerdo
-    right_speed = velocity + correction     # Velocidade do motor direito
+    left_speed = velocity + correction      # Velocidade do motor esquerdo
+    right_speed = velocity - correction     # Velocidade do motor direito
 
     left_speed = max(0, min(1, left_speed))     # Garante que a velocidade do motor esquerdo esteja entre 0 e 1. Evitando valores PWM negativos ou acima de 1
     right_speed = max(0, min(1, right_speed))
@@ -142,7 +146,7 @@ def process_frame(frame):
     height, width = frame.shape[:2]
 
     # Região de interesse: metade inferior da imagem
-    roi = frame[height // 2:height, :]
+    roi = frame[int(height*0.4):height, :]
 
     # Converte para escala de cinza e binariza para destacar a linha
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -231,18 +235,17 @@ def main():
             frame, roi, mask, cx, cy = process_frame(frame)
             drive_robot(cx, frame.shape[1])
 
-           # cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-           # cv2.imshow("Máscara", mask)
+            cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
+            cv2.imshow("Mscara", mask)
 
-           # key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-           # if key == ord("q"):
-           #     break
+            key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
+            if key == ord("q"):
+                break
     finally:
         stop_motors()
         # gpiozero limpa automaticamente os recursos
         cap.release()
-        # cv2.destroyAllWindows()
-
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":      # Execute o programa se tudo esta correto
     main()
