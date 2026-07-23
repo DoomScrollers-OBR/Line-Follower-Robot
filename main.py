@@ -1,5 +1,4 @@
 import cv2
-import numpy as np
 import time
 import os
 
@@ -10,19 +9,29 @@ except ImportError:
 
 WINDOW_NAME = "Seguidor de Linha"
 THRESHOLD_NAME = "Threshold"
+# Configurações da camera câmera
+
+CAM_CODEC = "MJPG"
+CAM_WIDTH = 320
+CAM_HEIGHT = 240
+CAM_BUFFERSIZE = 1
+CAM_FPS = 40
 
 # Objetos dos motores
 motor_left = None
 motor_right = None
 
 velocity = 0.20     # Variável global para armazenar a velocidade do robô (0 a 1)
-
+last_time = 0.0
 last_error = 0.0    # Variável global para armazenar o último erro
-last_time = 0       # Variável global para armazenar o último tempo
 
 def setup_motors():
     # Configura os pinos dos motores usando gpiozero com PWM.
     global motor_left, motor_right
+
+    PWM_FREQ = 30           # Frequência PWM dos motores
+
+    last_time = time.perf_counter()       # Variável global para armazenar o último tempo
 
     if PWMOutputDevice is None:
         print("gpiozero não encontrado. Modo simulado ativo.")
@@ -34,15 +43,16 @@ def setup_motors():
         # GPIO19 -> IN2 (pino físico 35)
         # GPIO12 -> IN3 (pino físico 32)
         # GPIO13 -> IN4 (pino físico 33)
+
         # Motor esquerdo (IN1 e IN2)
         motor_left = {
-            'forward': PWMOutputDevice(18, initial_value=0, frequency=30),  # IN1
+            'forward': PWMOutputDevice(18, initial_value=0, frequency=PWM_FREQ),  # IN1
             'backward': PWMOutputDevice(19, initial_value=0)  # IN2
         }
 
         # Motor direito (IN3 e IN4)
         motor_right = {
-            'forward': PWMOutputDevice(12, initial_value=0, frequency=30),  # IN3
+            'forward': PWMOutputDevice(12, initial_value=0, frequency=PWM_FREQ),  # IN3
             'backward': PWMOutputDevice(13, initial_value=0)  # IN4
         }
 
@@ -79,23 +89,25 @@ def drive_robot(cx, frame_width):
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
-        motor_left["forward"].value = velocity      
+        motor_left["forward"].value = velocity
         motor_right["forward"].value = velocity
         return
 
-    error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
-    if abs(error) >= 40:
-        error = error * 1.5
+    error = ( cx - center ) / center           # Calcula o erro entre o centro da linha e o centro da imagem
 
-    kp = 0.0007                     # Constante proporcional
-    proportional = kp * error       # Variavel da correção proporcional em relação ao erro
-    
-    Kd = 0.0005
+    Kp = 1                     # Constante proporcional
+    Kd = 0                     # Constante Derivativa
 
-    now = time.time()                 # Pega o tempo atual
+    proportional = Kp * error       # Variavel da correção proporcional em relação ao erro
+
+    now = time.perf_counter()                 # Pega o tempo atual
+
     dt = now - last_time
+
     derivative = Kd * (error - last_error) / dt if dt > 0 else 0  # Variavel da correção derivativa em relação ao erro
+
     last_time = now
+
     correction = proportional + derivative     # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
 
     max_correction = 0.30
@@ -194,8 +206,11 @@ def main():
             cap = opener()
             # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
             try:
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*CAM_CODEC))
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, CAM_BUFFERSIZE)
+                cap.set(cv2.CAP_PROP_FPS, CAM_FPS)
             except Exception:
                 pass
 
@@ -235,17 +250,17 @@ def main():
             frame, roi, mask, cx, cy = process_frame(frame)
             drive_robot(cx, frame.shape[1])
 
-            cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-            cv2.imshow("Mscara", mask)
+            #cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
+            #cv2.imshow("Mscara", mask)
 
-            key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-            if key == ord("q"):
-                break
+            #key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
+            #if key == ord("q"):
+            #    break
     finally:
         stop_motors()
         # gpiozero limpa automaticamente os recursos
         cap.release()
-        cv2.destroyAllWindows()
+        #cv2.destroyAllWindows()
 
 if __name__ == "__main__":      # Execute o programa se tudo esta correto
     main()
