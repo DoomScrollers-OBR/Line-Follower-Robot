@@ -15,6 +15,13 @@ THRESHOLD_NAME = "Threshold"
 motor_left = None
 motor_right = None
 
+GREEN_MIN = np.array([ 40, 150, 180])      # Valoores HSV MÍNIMOS para detectar verde
+GREEN_MAX = np.array([ 70, 255, 255])    # Valores HSV MÁXIMOS para detectar verde
+MIN_GREEN_AREA = 500                     # pixels mínimos para detectar o verde
+
+TURN_SPEED = 0.35
+
+PWM_FREQ = 25
 velocity = 0.20     # Variável global para armazenar a velocidade do robô (0 a 1)
 
 last_error = 0.0    # Variável global para armazenar o último erro
@@ -36,14 +43,14 @@ def setup_motors():
         # GPIO13 -> IN4 (pino físico 33)
         # Motor esquerdo (IN1 e IN2)
         motor_left = {
-            'forward': PWMOutputDevice(18, initial_value=0, frequency=30),  # IN1
-            'backward': PWMOutputDevice(19, initial_value=0)  # IN2
+            'forward': PWMOutputDevice(18, initial_value=0, frequency=PWM_FREQ),  # IN1
+            'backward': PWMOutputDevice(19, initial_value=0, frequency=PWM_FREQ)  # IN2
         }
 
         # Motor direito (IN3 e IN4)
         motor_right = {
-            'forward': PWMOutputDevice(12, initial_value=0, frequency=30),  # IN3
-            'backward': PWMOutputDevice(13, initial_value=0)  # IN4
+            'forward': PWMOutputDevice(12, initial_value=0, frequency=PWM_FREQ),  # IN3
+            'backward': PWMOutputDevice(13, initial_value=0, frequency=PWM_FREQ)  # IN4
         }
 
         # Garante estado inicial desligado
@@ -73,9 +80,7 @@ def drive_robot(cx, frame_width):
     center = frame_width // 2       # Calcula o centro da imagem
     threshold = 5                  # Margem de erro de 21
 
-    global last_error  # Declara que vamos usar a variável global last_error
-    global last_time   # Declara que vamos usar a variável global last_time
-
+    global last_error, last_time  # Declara que vamos usar a variável global last_erro e last_time
 
     if cx is None:                  # Caso não encontre o valor da linha no eixo x
         print("Não vi a linha")
@@ -84,21 +89,19 @@ def drive_robot(cx, frame_width):
         return
 
     error = cx - center             # Calcula o erro entre o centro da linha e o centro da imagem
-    if abs(error) >= 40:
-        error = error * 1.5
 
-    kp = 0.0007                     # Constante proporcional
+    kp = 0.00008                     # Constante proporcional
     proportional = kp * error       # Variavel da correção proporcional em relação ao erro
     
-    Kd = 0.0005
+    Kd = 0.0003
 
-    now = time.time()                 # Pega o tempo atual
+    now = time.perf_counter()                 # Pega o tempo atual
     dt = now - last_time
     derivative = Kd * (error - last_error) / dt if dt > 0 else 0  # Variavel da correção derivativa em relação ao erro
     last_time = now
     correction = proportional + derivative     # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
 
-    max_correction = 0.30
+    max_correction = 0.25
     correction = max(-max_correction, min(max_correction, correction))
 
     if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
@@ -176,6 +179,63 @@ def process_frame(frame):
 
     return frame, roi, binary, cx, cy
 
+def identify_green(frame, cy, frame_height):
+    if cy is None:
+        return False, False
+
+    cy_frame = int(frame_height * 0.4) + cy
+
+    # mascara pra cor verde
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, GREEN_MIN, GREEN_MAX)
+
+    middle = frame.shape[1] // 2    # tamanho de 160 x 320 px
+
+    #metade esquerda e metade direita
+    mask_left = mask[:, :middle]
+    mask_right = mask[:, middle:]
+
+    def y_med(m):
+        ys, _ = np.where(m > 0)     # linhas com pixel verde
+        if len(ys) < MIN_GREEN_AREA:
+            return None
+        return int(np.mean(ys))     # y médio do  verde
+
+    y_left = y_med(mask_left)
+    y_right = y_med(mask_right)
+
+    # Verde só vai quando é antes da linha 
+    left_on = (y_left is not None) and (y_left < cy_frame)
+    right_on = (y_right is not None) and (y_right < cy_frame)
+
+    return left_on, right_on
+
+def do_manobra(green_left, green_right):
+    if green_left and green_right: 
+        print("Verde nos dois - Dá meia volta")
+        # Motor esquerdo avançado, motor direito reverso
+        motor_left['forward'].value = 0
+        motor_left['backward'].value = TURN_SPEED
+        motor_right['forward'].value = TURN_SPEED
+        motor_right['backward'].value = 0
+        time.sleep(1.0)
+
+    elif green_left:
+        print("Verde na esquerda - Virar para a esquerda")
+        # Motor esquerdo reverso, motor direito avançado
+        motor_left['forward'].value = 0
+        motor_left['backward'].value = TURN_SPEED
+        motor_right['forward'].value = TURN_SPEED
+        motor_right['backward'].value = 0
+        time.sleep(0.5)
+    elif green_right:   # Se ele ver verde na direita
+        print("Verde na direita - Virar para a direita")
+        # Motor esquerdo avançado, motor direito reverso
+        motor_left['forward'].value = TURN_SPEED
+        motor_left['backward'].value = 0
+        motor_right['forward'].value = 0
+        motor_right['backward'].value = TURN_SPEED
+        time.sleep(0.5)
 
 def main():
     """Função principal do programa."""
@@ -194,8 +254,10 @@ def main():
             cap = opener()
             # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
             try:
+                cap.set(cv2.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*"MJPG"))
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             except Exception:
                 pass
 
@@ -233,11 +295,17 @@ def main():
                 break
 
             frame, roi, mask, cx, cy = process_frame(frame)
-            drive_robot(cx, frame.shape[1])
+
+            # analisa se tem verde antes de prosseguir para o seguidor comum
+            green_left, green_right = identify_green(frame, cy, frame.shape[0])
+
+            if green_left or green_right:
+                do_manobra(green_left, green_right)
+            else:
+                drive_robot(cx, frame.shape[1])
 
             cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
             cv2.imshow("Mscara", mask)
-
             key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
             if key == ord("q"):
                 break
