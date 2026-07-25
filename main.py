@@ -15,7 +15,7 @@ THRESHOLD_NAME = "Threshold"
 motor_left = None
 motor_right = None
 
-GREEN_MIN = np.array([ 40, 150, 180])      # Valoores HSV MÍNIMOS para detectar verde
+GREEN_MIN = np.array([ 60, 190, 200])      # Valoores HSV MÍNIMOS para detectar verde
 GREEN_MAX = np.array([ 70, 255, 255])    # Valores HSV MÁXIMOS para detectar verde
 MIN_GREEN_AREA = 500                     # pixels mínimos para detectar o verde
 
@@ -196,10 +196,16 @@ def identify_green(frame, cy, frame_height):
     mask_right = mask[:, middle:]
 
     def y_med(m):
-        ys, _ = np.where(m > 0)     # linhas com pixel verde
-        if len(ys) < MIN_GREEN_AREA:
+        contours, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
             return None
-        return int(np.mean(ys))     # y médio do  verde
+        maior = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(maior) < MIN_GREEN_AREA:
+            return None
+        M = cv2.moments(maior)
+        if M["m00"] == 0:
+            return None
+        return int(M["m01"] / M["m00"]) # y do centroide
 
     y_left = y_med(mask_left)
     y_right = y_med(mask_right)
@@ -304,16 +310,18 @@ def main():
             else:
                 drive_robot(cx, frame.shape[1])
 
-            cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-            cv2.imshow("Mscara", mask)
-            key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-            if key == ord("q"):
-                break
+            #cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
+            #cv2.imshow("Mscara", mask)
+
+            #key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
+
+            #if key == ord("q"):
+            #    break
     finally:
         stop_motors()
         # gpiozero limpa automaticamente os recursos
         cap.release()
-        cv2.destroyAllWindows()
+        #cv2.destroyAllWindows()
 
 if __name__ == "__main__":      # Execute o programa se tudo esta correto
     main()
