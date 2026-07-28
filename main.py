@@ -121,29 +121,6 @@ def drive_robot(cx, frame_width):
 
     last_error = error  # Atualiza o último erro para a próxima iteração
 
-    # if error > threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
-    #     print("Virar para a esquerda")
-    #     # Motor esquerdo avançado, motor direito reverso
-    #     motor_left['forward'].value = left_speed
-    #     motor_left['backward'].value = 0
-    #     motor_right['forward'].value = 0
-    #     motor_right['backward'].value = right_speed
-    # elif error < -threshold:   # Se o valor da linha no eixo x for menor que o centro da imagem - tolerância...
-    #     print("Virar para a direita")
-    #     # Motor esquerdo reverso, motor direito avançado
-    #     motor_left['forward'].value = 0
-    #     motor_left['backward'].value = left_speed
-    #     motor_right['forward'].value = right_speed
-    #     motor_right['backward'].value = 0
-    # else:                           # Caso esteja dentro da tolerância
-    #     print("Seguindo a linha")
-    #     # Ambos os motores avançados com PWM em velocidade lenta
-    #     motor_left['forward'].value = left_speed
-    #     motor_left['backward'].value = 0
-    #     motor_right['forward'].value = right_speed
-    #     motor_right['backward'].value = 0
-
-
 def process_frame(frame):
     """Processa o frame, aplica a região de interesse e detecta a linha."""
     height, width = frame.shape[:2]
@@ -242,7 +219,7 @@ def do_manobra(green_left, green_right):
         motor_right['forward'].value = 0
         motor_right['backward'].value = TURN_SPEED
         time.sleep(0.5)
-
+    stop_motors()
 def main():
     """Função principal do programa."""
     # Tenta abrir a câmera com várias estratégias (fallbacks)
@@ -260,7 +237,7 @@ def main():
             cap = opener()
             # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
             try:
-                cap.set(cv2.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*"MJPG"))
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -300,10 +277,11 @@ def main():
             if not ret:                 # Se não conectou, quebra o loop
                 break
 
+            original_frame = frame.copy
             frame, roi, mask, cx, cy = process_frame(frame)
 
             # analisa se tem verde antes de prosseguir para o seguidor comum
-            green_left, green_right = identify_green(frame, cy, frame.shape[0])
+            green_left, green_right = identify_green(original_frame, cy, original_frame.shape[0])
 
             if green_left or green_right:
                 do_manobra(green_left, green_right)
