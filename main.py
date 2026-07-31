@@ -10,7 +10,6 @@ except ImportError:
 WINDOW_NAME = "Seguidor de Linha"
 THRESHOLD_NAME = "Threshold"
 # Configurações da camera câmera
-
 CAM_CODEC = "MJPG"
 CAM_WIDTH = 320
 CAM_HEIGHT = 240
