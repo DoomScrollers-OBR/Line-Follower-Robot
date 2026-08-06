@@ -1,266 +1,155 @@
+"""
+Hardware:
+  - Raspberry Pi 4B (2GB RAM)
+  - Ponte H DRV8833: cada motor usa 2 pinos (INx1/INx2), sem pino de
+    "enable" separado. A gpiozero ja modela isso com a classe Motor:
+    motor.value vai de -1 (re, velocidade maxima) a 1 (frente,
+    velocidade maxima), aplicando PWM no pino certo e deixando o
+    outro em LOW - exatamente o modo "fast decay" da DRV8833.
+  - nSLEEP da DRV8833 precisa estar em nivel alto (ligado direto em
+    VM ou com pull-up no modulo) pra ponte funcionar; sem isso os
+    motores nao se movem.
+  - 1 camera USB, so a de seguir linha.
+
+"""
+
 import cv2
+import numpy as np
 import time
-import os
+from gpiozero import Motor
 
-try:
-    from gpiozero import PWMOutputDevice
-except ImportError:
-    PWMOutputDevice = None
+# =========================================================================
+# CONFIGURACAO DE PILOTAGEM
+# =========================================================================
+Kp = 1.8
+Kd = 0.7
+BASE_SPEED = 25       # velocidade de cruzeiro (escala -50..50)
+MAX_SPEED = 50
+MIN_SPEED = -MAX_SPEED
+DEADZONE = 5            # erro abaixo disso e tratado como "reto"
+THRESHOLD = 80          # limiar de binarizacao (preto vs fundo)
+MIN_AREA = 11000        # area minima do contorno pra considerar "linha valida"
 
-WINDOW_NAME = "Seguidor de Linha"
-THRESHOLD_NAME = "Threshold"
-# Configurações da camera câmera
-CAM_CODEC = "MJPG"
-CAM_WIDTH = 320
-CAM_HEIGHT = 240
-CAM_BUFFERSIZE = 1
-CAM_FPS = 40
-
-# Objetos dos motores
-motor_left = None
-motor_right = None
-
-velocity = 0.20     # Variável global para armazenar a velocidade do robô (0 a 1)
-last_time = 0.0
-last_error = 0.0    # Variável global para armazenar o último erro
-
-def setup_motors():
-    # Configura os pinos dos motores usando gpiozero com PWM.
-    global motor_left, motor_right
-
-    PWM_FREQ = 30           # Frequência PWM dos motores
-
-    last_time = time.perf_counter()       # Variável global para armazenar o último tempo
-
-    if PWMOutputDevice is None:
-        print("gpiozero não encontrado. Modo simulado ativo.")
-        return
-
-    try:
-
-        # GPIO18 -> IN1 (pino físico 12)
-        # GPIO19 -> IN2 (pino físico 35)
-        # GPIO12 -> IN3 (pino físico 32)
-        # GPIO13 -> IN4 (pino físico 33)
-
-        # Motor esquerdo (IN1 e IN2)
-        motor_left = {
-            'forward': PWMOutputDevice(18, initial_value=0, frequency=PWM_FREQ),  # IN1
-            'backward': PWMOutputDevice(19, initial_value=0)  # IN2
-        }
-
-        # Motor direito (IN3 e IN4)
-        motor_right = {
-            'forward': PWMOutputDevice(12, initial_value=0, frequency=PWM_FREQ),  # IN3
-            'backward': PWMOutputDevice(13, initial_value=0)  # IN4
-        }
-
-        # Garante estado inicial desligado
-        stop_motors()
-    except Exception as e:
-        print(f"Erro ao configurar motores: {e}")
-        motor_left = None
-        motor_right = None
+# =========================================================================
+# MOTORES - DRV8833 via gpiozero.Motor
+# Ajuste os pinos conforme sua fiacao real com a ponte H.
+# =========================================================================
+left_motor = Motor(forward=17, backward=18)
+right_motor = Motor(forward=12, backward=13)
 
 
-def stop_motors():
-    # Para os motores e desliga as saídas PWM.
-    if motor_left is None or motor_right is None:
-        return
-
-    motor_left['forward'].value = 0
-    motor_left['backward'].value = 0
-    motor_right['forward'].value = 0
-    motor_right['backward'].value = 0
+def move(left_speed, right_speed):
+    # left_speed/right_speed ja chegam recortados em [MIN_SPEED, MAX_SPEED]
+    # vindos de control()
+    left_motor.value = left_speed / MAX_SPEED
+    right_motor.value = right_speed / MAX_SPEED
 
 
-def drive_robot(cx, frame_width):
-    # Controla o movimento do robô com base na posição da linha na imagem.
-    if motor_left is None or motor_right is None:
-        return
-
-    center = frame_width // 2       # Calcula o centro da imagem
-    threshold = 5                  # Margem de erro de 21
-
-    global last_error  # Declara que vamos usar a variável global last_error
-    global last_time   # Declara que vamos usar a variável global last_time
+def stop():
+    left_motor.stop()
+    right_motor.stop()
 
 
-    if cx is None:                  # Caso não encontre o valor da linha no eixo x
-        print("Não vi a linha")
-        motor_left["forward"].value = velocity
-        motor_right["forward"].value = velocity
-        return
+# =========================================================================
+# CAMERA
+# =========================================================================
 
-    error = ( cx - center ) / center           # Calcula o erro entre o centro da linha e o centro da imagem
+CAMERA_WIDTH, CAMERA_HEIGHT = 160, 120
 
-    Kp = 1                     # Constante proporcional
-    Kd = 0                     # Constante Derivativa
 
-    proportional = Kp * error       # Variavel da correção proporcional em relação ao erro
+def start_camera():
+    attempts = 0
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    while not cap.isOpened():
+        attempts += 1
+        print(f"[Camera] Tentando abrir... (tentativa {attempts})")
+        time.sleep(1)
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(3, CAMERA_WIDTH)
+    cap.set(4, CAMERA_HEIGHT)
+    print("[Camera] Pronta")
+    return cap
 
-    now = time.perf_counter()                 # Pega o tempo atual
 
-    dt = now - last_time
+# =========================================================================
+# VISAO - acha o centro (line_center_x) da linha preta
+# =========================================================================
+# Kernel da "abertura" morfologica (erosao seguida de dilatacao): limpa
+# ruidos pequenos da mascara binaria antes de procurar contornos, pra
+# grãos de sujeira/reflexo na imagem nao virarem "linha" falsa.
+kernel = np.ones((3, 3), np.uint8)
 
-    derivative = Kd * (error - last_error) / dt if dt > 0 else 0  # Variavel da correção derivativa em relação ao erro
 
+def find_line(frame):
+    height, width = frame.shape[:2]
+    roi = frame[int(height * 0.1):height, :]
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, THRESHOLD, 255, cv2.THRESH_BINARY_INV)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    line_center_x = None
+    if contours:
+        largest = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(largest) >= MIN_AREA:
+            moments = cv2.moments(largest)
+            if moments["m00"] != 0:
+                line_center_x = int(moments["m10"] / moments["m00"])
+
+    return line_center_x, roi
+
+
+# =========================================================================
+# CONTROLE (PID)
+# =========================================================================
+last_error = 0
+last_time = time.time()
+
+
+def control(line_center_x, roi):
+    global last_error, last_time
+
+    width = roi.shape[1]
+    now = time.time()
+    dt = max(now - last_time, 0.0001)
+
+    if line_center_x is not None:
+        center = width // 2
+        error = (line_center_x - center) / center * 100
+    else:
+        error = last_error  # perdeu a linha: mantem a ultima curva
+
+    if abs(error) < DEADZONE:
+        error = 0
+
+    derivative = np.clip((error - last_error) / dt, -300, 300)
+    correction = Kp * error + Kd * derivative
+
+    left_speed = np.clip(BASE_SPEED + correction, MIN_SPEED, MAX_SPEED)
+    right_speed = np.clip(BASE_SPEED - correction, MIN_SPEED, MAX_SPEED)
+    move(left_speed, right_speed)
+
+    last_error = error
     last_time = now
 
-    correction = proportional + derivative     # Variavel de correção. OBS: esta variavel foi adicionada pensando em colocar um controlador derivativo somando com o proporcional
 
-    max_correction = 0.30
-    correction = max(-max_correction, min(max_correction, correction))
-
-    if abs(error) < threshold:     # Caso o erro seja menor que a tolerância, zera a correção para manter o robô andando reto
-        correction = 0
-
-    left_speed = velocity + correction      # Velocidade do motor esquerdo
-    right_speed = velocity - correction     # Velocidade do motor direito
-
-    left_speed = max(0, min(1, left_speed))     # Garante que a velocidade do motor esquerdo esteja entre 0 e 1. Evitando valores PWM negativos ou acima de 1
-    right_speed = max(0, min(1, right_speed))
-
-    motor_left["forward"].value = left_speed    # Isso é lindo cara, a matemática faz tudo pela gente, sem precisar de condicionais
-    motor_left["backward"].value = 0
-
-    motor_right["forward"].value = right_speed  
-    motor_right["backward"].value = 0
-
-    last_error = error  # Atualiza o último erro para a próxima iteração
-
-    # if error > threshold:     # Se o valor da linha no eixo x for maior que o centro da imagem + tolerância...
-    #     print("Virar para a esquerda")
-    #     # Motor esquerdo avançado, motor direito reverso
-    #     motor_left['forward'].value = left_speed
-    #     motor_left['backward'].value = 0
-    #     motor_right['forward'].value = 0
-    #     motor_right['backward'].value = right_speed
-    # elif error < -threshold:   # Se o valor da linha no eixo x for menor que o centro da imagem - tolerância...
-    #     print("Virar para a direita")
-    #     # Motor esquerdo reverso, motor direito avançado
-    #     motor_left['forward'].value = 0
-    #     motor_left['backward'].value = left_speed
-    #     motor_right['forward'].value = right_speed
-    #     motor_right['backward'].value = 0
-    # else:                           # Caso esteja dentro da tolerância
-    #     print("Seguindo a linha")
-    #     # Ambos os motores avançados com PWM em velocidade lenta
-    #     motor_left['forward'].value = left_speed
-    #     motor_left['backward'].value = 0
-    #     motor_right['forward'].value = right_speed
-    #     motor_right['backward'].value = 0
-
-
-def process_frame(frame):
-    """Processa o frame, aplica a região de interesse e detecta a linha."""
-    height, width = frame.shape[:2]
-
-    # Região de interesse: metade inferior da imagem
-    roi = frame[int(height*0.4):height, :]
-
-    # Converte para escala de cinza e binariza para destacar a linha
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY_INV)
-
-    # Procura os contornos encontrados na máscara
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    cx = None           # Centro da imagem no eixo x
-    cy = None           # Centro da imagem no eixo y
-
-    if contours:        # Caso haja contorno
-        bigger = max(contours, key=cv2.contourArea)     # Seleciona a maior mancha branca
-        M = cv2.moments(bigger)                         # Calcula os momentos
-
-        if M["m00"] != 0:                               # Se o número de pixels for diferente de zero
-            cx = int(M["m10"] / M["m00"])               # Média aritmética das posições X dos pixels em razão do número de pixels, resultando no centro do eixo X
-            cy = int(M["m01"] / M["m00"])               # O mesmo que a variavel passada, mas em relação ao eixo y. Os dois juntos resultam no centro da linha
-
-            # Desenha o contorno e o centro da linha na região de interesse
-            cv2.drawContours(roi, [bigger], -1, (0, 255, 0), 2)
-            cv2.circle(roi, (cx, cy), 5, (0, 0, 255), -1)
-
-            # Desenha a linha central da imagem para referência
-            center_x = width // 2
-            cv2.line(frame, (center_x, 0), (center_x, height), (255, 0, 0), 2)
-
-    return frame, roi, binary, cx, cy
-
-
-def main():
-    """Função principal do programa."""
-    # Tenta abrir a câmera com várias estratégias (fallbacks)
-    attempts = [
-        ("default index", lambda: cv2.VideoCapture(0)),
-        ("v4l2 index", lambda: cv2.VideoCapture(0, cv2.CAP_V4L2)),
-        ("v4l2 device", lambda: cv2.VideoCapture('/dev/video0', cv2.CAP_V4L2)),
-        ("gstreamer index", lambda: cv2.VideoCapture(0, cv2.CAP_GSTREAMER)),
-    ]
-
-    cap = None
-    for name, opener in attempts:
-        try:
-            print(f"Tentando abrir câmera ({name})...")
-            cap = opener()
-            # Ajuste de resolução para câmera USB ou CSI na Raspberry Pi 4
-            try:
-                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*CAM_CODEC))
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, CAM_BUFFERSIZE)
-                cap.set(cv2.CAP_PROP_FPS, CAM_FPS)
-            except Exception:
-                pass
-
-            # Pequena espera para backend inicializar
-            time.sleep(0.2)
-            if cap is not None and cap.isOpened():
-                print(f"Câmera aberta com sucesso usando: {name}")
-                break
-            else:
-                print(f"Falha ao abrir com: {name}")
-                try:
-                    cap.release()
-                except Exception:
-                    pass
-                cap = None
-        except Exception as e:
-            print(f"Erro tentando abrir câmera ({name}): {e}")
-
-    if cap is None or not cap.isOpened():
-        print("Não foi possível abrir a câmera. Verifique: \n- Se a câmera está conectada;\n- Se o usuário pertence ao grupo 'video';\n- Se outro processo (libcamera, vlc, etc.) não está usando /dev/video0;")
-        # Lista rápida de dispositivos encontrados para ajudar diagnóstico
-        try:
-            devs = sorted([d for d in os.listdir('/dev') if d.startswith('video')])
-            print("/dev contém:", devs)
-        except Exception:
-            pass
-        return
-
-    setup_motors()                      # Configura os motores
-
+# =========================================================================
+# LOOP PRINCIPAL
+# =========================================================================
+if __name__ == "__main__":
+    cap = start_camera()
     try:
         while True:
-            ret, frame = cap.read()     # Lê a câmera e vê se conseguiu conectar
-            if not ret:                 # Se não conectou, quebra o loop
-                break
-
-            frame, roi, mask, cx, cy = process_frame(frame)
-            drive_robot(cx, frame.shape[1])
-
-            #cv2.imshow(WINDOW_NAME, frame)      # Mostra a imagem renderizada
-            #cv2.imshow("Mscara", mask)
-
-            #key = cv2.waitKey(1) & 0xFF         # Caso o usuário aperte "q" de "quit", encerre o loop
-            #if key == ord("q"):
-            #    break
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            line_center_x, roi = find_line(frame)
+            control(line_center_x, roi)
+    except KeyboardInterrupt:
+        print("Finalizado")
     finally:
-        stop_motors()
-        # gpiozero limpa automaticamente os recursos
+        stop()
         cap.release()
-        #cv2.destroyAllWindows()
-
-if __name__ == "__main__":      # Execute o programa se tudo esta correto
-    main()
-
