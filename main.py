@@ -7,10 +7,11 @@ manda velocidade pros motores via ponte H DRV8833.
 Hardware:
   - Raspberry Pi 4B (2GB RAM)
   - Ponte H DRV8833: cada motor usa 2 pinos (INx1/INx2), sem pino de
-    "enable" separado. A gpiozero ja modela isso com a classe Motor:
-    motor.value vai de -1 (re, velocidade maxima) a 1 (frente,
-    velocidade maxima), aplicando PWM no pino certo e deixando o
-    outro em LOW - exatamente o modo "fast decay" da DRV8833.
+    "enable" separado. Cada pino e um PWMOutputDevice (gpiozero); a
+    logica em _set_motor() aplica PWM num pino e deixa o outro em
+    LOW - exatamente o modo "fast decay" da DRV8833. Trocamos o
+    Motor (que nao deixa configurar frequencia) por PWMOutputDevice
+    direto justamente pra poder ajustar PWM_FREQUENCY abaixo.
   - nSLEEP da DRV8833 precisa estar em nivel alto (ligado direto em
     VM ou com pull-up no modulo) pra ponte funcionar; sem isso os
     motores nao se movem.
@@ -20,16 +21,12 @@ Hardware:
 import cv2
 import numpy as np
 import time
-from gpiozero import Motor
+from gpiozero import PWMOutputDevice
 
 # =========================================================================
 # CONFIGURACAO DE PILOTAGEM
 # =========================================================================
 Kp = 1.8
-# Kd bem mais baixo que antes: sem a deteccao de verde/sonar/MPU
-# ocupando tempo, o loop roda bem mais rapido, entao o mesmo Kd de
-# antes fazia a derivada reagir forte demais a ruido de poucos pixels.
-# Comece baixo (0.1) e va subindo aos poucos testando no robo real.
 Kd = 0.1
 BASE_SPEED = 25       # velocidade de cruzeiro (escala -50..50)
 MAX_SPEED = 50
@@ -38,34 +35,46 @@ DEADZONE = 5            # erro abaixo disso e tratado como "reto"
 THRESHOLD = 80          # limiar de binarizacao (preto vs fundo)
 MIN_AREA = 11000        # area minima do contorno pra considerar "linha valida"
 
-# Filtro passa-baixa (media movel exponencial) aplicado na derivada.
-# Sem loops de processamento pesado a cada frame, o loop atual roda
-# bem mais rapido que o codigo original - e como derivative =
-# (error - last_error) / dt, um dt bem menor faz o mesmo ruido de
-# poucos pixels virar um pico de derivada enorme, saturando a
-# correcao e fazendo o robo "tremer". O filtro suaviza isso sem
-# perder a resposta a mudancas reais de direcao.
-# Quanto MENOR o valor, mais suave (mas com mais atraso de resposta).
+# Filtro passa-baixa (media movel exponencial) aplicado na derivada -
+# suaviza picos de ruido sem perder resposta a mudancas reais.
 DERIVATIVE_FILTER = 0.2
 
 # =========================================================================
-# MOTORES - DRV8833 via gpiozero.Motor
+# MOTORES - DRV8833 via PWMOutputDevice (gpiozero)
 # Ajuste os pinos conforme sua fiacao real com a ponte H.
 # =========================================================================
-left_motor = Motor(forward=17, backward=18)
-right_motor = Motor(forward=12, backward=13)
+PWM_FREQUENCY = 200  # Hz - baixe mais (ex: 100, 50) se ainda tiver problema
+
+left_forward = PWMOutputDevice(17, frequency=PWM_FREQUENCY)
+left_backward = PWMOutputDevice(18, frequency=PWM_FREQUENCY)
+right_forward = PWMOutputDevice(12, frequency=PWM_FREQUENCY)
+right_backward = PWMOutputDevice(13, frequency=PWM_FREQUENCY)
+
+
+def _set_motor(forward_pin, backward_pin, value):
+    # value entre -1 (re, velocidade maxima) e 1 (frente, velocidade
+    # maxima). PWM num pino, o outro em LOW.
+    if value > 0:
+        forward_pin.value = value
+        backward_pin.value = 0
+    elif value < 0:
+        forward_pin.value = 0
+        backward_pin.value = -value
+    else:
+        forward_pin.value = 0
+        backward_pin.value = 0
 
 
 def move(left_speed, right_speed):
     # left_speed/right_speed ja chegam recortados em [MIN_SPEED, MAX_SPEED]
     # vindos de control()
-    left_motor.value = left_speed / MAX_SPEED
-    right_motor.value = right_speed / MAX_SPEED
+    _set_motor(left_forward, left_backward, left_speed / MAX_SPEED)
+    _set_motor(right_forward, right_backward, right_speed / MAX_SPEED)
 
 
 def stop():
-    left_motor.stop()
-    right_motor.stop()
+    _set_motor(left_forward, left_backward, 0)
+    _set_motor(right_forward, right_backward, 0)
 
 
 # =========================================================================
@@ -145,8 +154,6 @@ def control(line_center_x, roi):
         error = 0
 
     raw_derivative = np.clip((error - last_error) / dt, -300, 300)
-    # media movel exponencial: mistura o valor cru com o filtrado
-    # anterior, suavizando picos de um frame so
     filtered_derivative = (DERIVATIVE_FILTER * raw_derivative
                             + (1 - DERIVATIVE_FILTER) * filtered_derivative)
 
