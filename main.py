@@ -1,4 +1,9 @@
 """
+SEGUIDOR DE LINHA SIMPLES (baseado no ROBO_DOGO_2026)
+
+So o essencial: le a camera, acha a linha preta, calcula um PID e
+manda velocidade pros motores via ponte H DRV8833.
+
 Hardware:
   - Raspberry Pi 4B (2GB RAM)
   - Ponte H DRV8833: cada motor usa 2 pinos (INx1/INx2), sem pino de
@@ -10,7 +15,6 @@ Hardware:
     VM ou com pull-up no modulo) pra ponte funcionar; sem isso os
     motores nao se movem.
   - 1 camera USB, so a de seguir linha.
-
 """
 
 import cv2
@@ -22,13 +26,27 @@ from gpiozero import Motor
 # CONFIGURACAO DE PILOTAGEM
 # =========================================================================
 Kp = 1.8
-Kd = 0.7
+# Kd bem mais baixo que antes: sem a deteccao de verde/sonar/MPU
+# ocupando tempo, o loop roda bem mais rapido, entao o mesmo Kd de
+# antes fazia a derivada reagir forte demais a ruido de poucos pixels.
+# Comece baixo (0.1) e va subindo aos poucos testando no robo real.
+Kd = 0.1
 BASE_SPEED = 25       # velocidade de cruzeiro (escala -50..50)
 MAX_SPEED = 50
 MIN_SPEED = -MAX_SPEED
 DEADZONE = 5            # erro abaixo disso e tratado como "reto"
 THRESHOLD = 80          # limiar de binarizacao (preto vs fundo)
 MIN_AREA = 11000        # area minima do contorno pra considerar "linha valida"
+
+# Filtro passa-baixa (media movel exponencial) aplicado na derivada.
+# Sem loops de processamento pesado a cada frame, o loop atual roda
+# bem mais rapido que o codigo original - e como derivative =
+# (error - last_error) / dt, um dt bem menor faz o mesmo ruido de
+# poucos pixels virar um pico de derivada enorme, saturando a
+# correcao e fazendo o robo "tremer". O filtro suaviza isso sem
+# perder a resposta a mudancas reais de direcao.
+# Quanto MENOR o valor, mais suave (mas com mais atraso de resposta).
+DERIVATIVE_FILTER = 0.2
 
 # =========================================================================
 # MOTORES - DRV8833 via gpiozero.Motor
@@ -53,18 +71,18 @@ def stop():
 # =========================================================================
 # CAMERA
 # =========================================================================
-
+CAMERA_INDEX = 0   # indice do dispositivo de video (/dev/video0)
 CAMERA_WIDTH, CAMERA_HEIGHT = 160, 120
 
 
 def start_camera():
     attempts = 0
-    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
     while not cap.isOpened():
         attempts += 1
         print(f"[Camera] Tentando abrir... (tentativa {attempts})")
         time.sleep(1)
-        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     cap.set(3, CAMERA_WIDTH)
     cap.set(4, CAMERA_HEIGHT)
@@ -103,14 +121,15 @@ def find_line(frame):
 
 
 # =========================================================================
-# CONTROLE (PID)
+# CONTROLE (PID com derivada filtrada)
 # =========================================================================
 last_error = 0
 last_time = time.time()
+filtered_derivative = 0.0
 
 
 def control(line_center_x, roi):
-    global last_error, last_time
+    global last_error, last_time, filtered_derivative
 
     width = roi.shape[1]
     now = time.time()
@@ -125,8 +144,13 @@ def control(line_center_x, roi):
     if abs(error) < DEADZONE:
         error = 0
 
-    derivative = np.clip((error - last_error) / dt, -300, 300)
-    correction = Kp * error + Kd * derivative
+    raw_derivative = np.clip((error - last_error) / dt, -300, 300)
+    # media movel exponencial: mistura o valor cru com o filtrado
+    # anterior, suavizando picos de um frame so
+    filtered_derivative = (DERIVATIVE_FILTER * raw_derivative
+                            + (1 - DERIVATIVE_FILTER) * filtered_derivative)
+
+    correction = Kp * error + Kd * filtered_derivative
 
     left_speed = np.clip(BASE_SPEED + correction, MIN_SPEED, MAX_SPEED)
     right_speed = np.clip(BASE_SPEED - correction, MIN_SPEED, MAX_SPEED)
