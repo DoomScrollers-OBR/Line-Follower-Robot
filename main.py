@@ -26,8 +26,8 @@ from gpiozero import PWMOutputDevice
 # =========================================================================
 # CONFIGURACAO DE PILOTAGEM
 # =========================================================================
-Kp = 1.8
-Kd = 0.1
+Kp = 2
+Kd = 0.7
 BASE_SPEED = 25       # velocidade de cruzeiro (escala -50..50)
 MAX_SPEED = 50
 MIN_SPEED = -MAX_SPEED
@@ -37,13 +37,13 @@ MIN_AREA = 11000        # area minima do contorno pra considerar "linha valida"
 
 # Filtro passa-baixa (media movel exponencial) aplicado na derivada -
 # suaviza picos de ruido sem perder resposta a mudancas reais.
-DERIVATIVE_FILTER = 0.2
+DERIVATIVE_FILTER = 0.9
 
 # =========================================================================
 # MOTORES - DRV8833 via PWMOutputDevice (gpiozero)
 # Ajuste os pinos conforme sua fiacao real com a ponte H.
 # =========================================================================
-PWM_FREQUENCY = 200  # Hz - baixe mais (ex: 100, 50) se ainda tiver problema
+PWM_FREQUENCY = 30  # Hz - baixe mais (ex: 100, 50) se ainda tiver problema
 
 left_forward = PWMOutputDevice(17, frequency=PWM_FREQUENCY)
 left_backward = PWMOutputDevice(18, frequency=PWM_FREQUENCY)
